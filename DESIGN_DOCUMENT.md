@@ -1,97 +1,122 @@
-# Design Document – X-Ray Data Engineering Pipeline
+# Design Document – Medical X-Ray Data Engineering Pipeline
 
 ## Objective
 
-Build an end-to-end data engineering pipeline for Chest X-Ray images that ingests raw data, validates files, transforms images, stores metadata, and generates execution logs.
+The objective of this project is to build an end-to-end data engineering pipeline for Chest X-ray images that automatically ingests raw data, validates image files, quarantines invalid files, performs de-identification, transforms images into standardized formats, stores metadata, and generates execution logs.
 
 ## Dataset
 
-- Chest X-Ray Images (Pneumonia)
-- Sample size: 50 images
-- 25 NORMAL
-- 25 PNEUMONIA
+This project uses the **Chest X-ray Images (Pneumonia)** public dataset from **Kaggle**.
+
+* **Modality:** Chest X-ray
+* **Format:** JPEG images
+* **Classes:** NORMAL and PNEUMONIA
+* **Demonstration Run:** 52 files processed (48 valid, 4 invalid/quarantined)
+
+A sample subset of the dataset is included for demonstration, while the full dataset can be downloaded from Kaggle.
 
 ## Storage Layout
 
-The project follows a Bronze–Silver–Gold architecture.
+The pipeline follows a layered **Bronze–Silver–Gold** architecture.
 
-- raw_data (Bronze): Original images.
-- landing: Ingested copies before processing.
-- silver: Standardized images resized to 256×256.
-- gold: Curated images resized to 224×224.
-- quarantine: Invalid or corrupted files.
-- logs: Pipeline execution logs.
+| Layer         | Purpose                                                                  |
+| ------------- | ------------------------------------------------------------------------ |
+| `raw_data/`   | Original X-ray images downloaded from Kaggle                             |
+| `landing/`    | Ingested copies before processing                                        |
+| `silver/`     | Validated and standardized images resized to **512×512**                 |
+| `gold/`       | ML-ready images resized to **224×224**, curated metadata, and thumbnails |
+| `quarantine/` | Invalid or corrupted files                                               |
+| `logs/`       | Pipeline execution logs                                                  |
+
+This layered approach preserves raw data while producing clean, analysis-ready outputs.
 
 ## Metadata Schema
 
-The metadata contains:
+The pipeline extracts technical metadata from every valid image.
 
-| Field | Description |
-|-------|-------------|
-| filename | Image file name |
-| category | NORMAL or PNEUMONIA |
-| width | Original image width |
-| height | Original image height |
-| format | Image format |
+| Field       | Description                         |
+| ----------- | ----------------------------------- |
+| `record_id` | Anonymized unique record identifier |
+| `filename`  | Image file name                     |
+| `category`  | NORMAL or PNEUMONIA                 |
+| `width`     | Original image width                |
+| `height`    | Original image height               |
+| `format`    | Image format                        |
+| `status`    | Validation status                   |
 
-Metadata is stored in:
+The metadata is stored in:
 
-- metadata.csv
-- metadata.db (SQLite)
+* `metadata.csv`
+* `gold/curated_metadata.csv`
+* `metadata.db` (SQLite)
 
 ## Validation Strategy
 
-Each image is opened using Pillow.
+Each file is validated using the **Pillow** library.
 
-- Valid images continue.
-- Invalid or corrupted files are moved to the quarantine folder.
+* Valid image files continue through the pipeline.
+* Invalid or corrupted files are automatically moved to the `quarantine` folder.
+* The pipeline records the number of valid and invalid files in the execution logs.
 
-## De-identification
+## De-identification Approach
 
-The selected dataset contains JPEG images without patient-identifiable metadata such as patient name, date of birth, or medical record number.
+The selected Kaggle dataset contains JPEG images without embedded patient identifiers such as patient names, dates of birth, or medical record numbers.
 
-Therefore:
+To maintain privacy:
 
-- No patient identifiers are stored.
-- Only technical metadata is extracted.
+* No patient-identifiable information is stored.
+* Each record receives an anonymized `record_id`.
+* Only technical image metadata is extracted and stored.
 
-## Transformation
+## Transformation Strategy
 
-Images are standardized into two versions.
+The pipeline creates multiple standardized versions of each valid image.
 
-- Silver: 256×256
-- Gold: 224×224
+* **Silver Layer:** Images resized to **512×512** for standardized processing.
+* **Gold Layer:** Images resized to **224×224** for machine learning readiness.
+* **Thumbnails:** Images resized to **128×128** for quick preview and quality assurance.
 
-This makes the dataset consistent for future analytics or machine learning.
+These transformations create consistent outputs suitable for future analytics and AI workflows.
 
 ## Orchestration Choice
 
-The pipeline uses a Python script-based workflow.
+The pipeline uses a structured **Python script-based workflow**.
 
-Reasons:
+Execution order:
 
-- Simple implementation.
-- Easy to rerun.
-- Suitable for small datasets.
-- Can be extended to Airflow or Prefect later.
+1. Data Ingestion
+2. Validation
+3. Quarantine Handling
+4. De-identification
+5. Image Transformation
+6. Silver Layer Generation
+7. Gold Layer Generation
+8. Metadata Storage
+9. Logging and Monitoring
 
-## Monitoring
+A Python-based workflow was chosen because it is simple to implement, easy to rerun, and can later be extended to orchestration tools such as **Apache Airflow** or **Prefect**.
 
-The logging module records:
+## Monitoring and Logging
 
-- Pipeline start
-- Files copied
-- Valid files
-- Invalid files
-- Pipeline completion
+The pipeline records important execution events using Python's `logging` module.
+
+The logs include:
+
+* Pipeline start
+* Files processed
+* Valid files
+* Invalid files
+* Quarantined files
+* Pipeline completion
 
 Logs are stored in:
 
-logs/pipeline.log
+`logs/pipeline.log`
 
 ## Limitations
 
-- Local storage only.
-- Small sample dataset.
-- JPEG images instead of DICOM.
-- Script-based orchestration instead of Airflow.
+* Uses local storage rather than cloud storage.
+* Demonstration uses a small subset of the Kaggle dataset.
+* JPEG images are used instead of DICOM medical imaging files.
+* Script-based orchestration is used instead of Apache Airflow or Prefect.
+* The pipeline is designed as a demonstration project and can be expanded for production use.
